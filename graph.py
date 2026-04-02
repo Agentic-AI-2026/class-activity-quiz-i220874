@@ -59,3 +59,57 @@ def planner_node(state: AgentState):
         "current_step": 0, # Starts the executor at step 0
         "results": []      # Starts with an empty list of results
     }
+
+# ─── 4. TOOL HELPERS & EXECUTOR NODE ────────────────────────────────────────────
+
+TOOL_ARG_MAP = {
+    "fetch_wikipedia":  "topic",
+    "fetch_data_source": "source",
+    "get_weather":      "city",
+}
+
+def safe_args(tool_name: str, raw_args: dict) -> dict:
+    """Remap hallucinated arg names to the correct parameter."""
+    expected = TOOL_ARG_MAP.get(tool_name)
+    if not expected or expected in raw_args:
+        return raw_args
+    first_val = next(iter(raw_args.values()), tool_name)
+    print(f"  Remapped {raw_args} → {{'{expected}': '{first_val}'}}")
+    return {expected: str(first_val)}
+
+# We make this async because MCP tools (like your weather API) are called asynchronously
+async def executor_node(state: AgentState):
+    print("\n--- EXECUTOR NODE ---")
+    plan = state["plan"]
+    current_step_idx = state["current_step"]
+    results = state["results"]
+    
+    # Identify which step we are currently on
+    step = plan[current_step_idx]
+    print(f"Executing Step {step['step']}: {step['description']}")
+    
+    tool_name = step.get("tool")
+    
+    # ⚠️ Note: 'tools_map' and 'llm' will be injected/imported when we run the main script
+    if tool_name and tool_name in tools_map:
+        corrected = safe_args(tool_name, step.get("args") or {})
+        # Execute the specific MCP tool
+        result = await tools_map[tool_name].ainvoke(corrected)
+    else:
+        # Synthesis step — use the LLM to write a summary based on prior results
+        context  = "\n".join([f"Step {r['step']}: {r['result']}" for r in results])
+        response = llm.invoke([
+            HumanMessage(content=f"{step['description']}\n\nContext:\n{context}")
+        ])
+        result = response.content
+
+    print(f"Result: {str(result)[:100]}...\n")
+    
+    # Store the result
+    results.append({"step": step["step"], "description": step["description"], "result": str(result)})
+    
+    # Increment the step tracker and update the state
+    return {
+        "results": results,
+        "current_step": current_step_idx + 1
+    }
