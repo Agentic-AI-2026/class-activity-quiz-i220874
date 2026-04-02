@@ -1,7 +1,7 @@
-langchain 
-langgraph 
-langsmith 
-python-dotenv
-langchain-google-genai
-langchain-mcp-adapters 
+langchain
+langgraph
+langchain-groq
+langchain-mcp-adapters
 nest_asyncio
+python-dotenv
+tavily-python
