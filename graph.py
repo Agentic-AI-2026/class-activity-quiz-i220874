@@ -3,6 +3,7 @@ import json
 import re
 from typing import TypedDict, List, Dict, Any
 from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.graph import StateGraph, START, END
 
 # ==========================================
 # TODO: LLM INITIALIZATION
@@ -113,3 +114,41 @@ async def executor_node(state: AgentState):
         "results": results,
         "current_step": current_step_idx + 1
     }
+
+# ─── 5. GRAPH WIRING & ROUTING ──────────────────────────────────────────────────
+
+def should_continue(state: AgentState):
+    """Routing logic to determine if we are done or need to execute the next step."""
+    plan = state["plan"]
+    current_step = state["current_step"]
+    
+    # If we haven't reached the end of the plan, keep looping
+    if current_step < len(plan):
+        return "continue"
+    else:
+        return "end"
+
+# Initialize the graph with our state schema
+workflow = StateGraph(AgentState)
+
+# Add our two nodes
+workflow.add_node("planner", planner_node)
+workflow.add_node("executor", executor_node)
+
+# Define the standard edges (how it starts)
+workflow.add_edge(START, "planner")
+workflow.add_edge("planner", "executor")
+
+# Define the conditional edge (the loop)
+workflow.add_conditional_edges(
+    "executor",
+    should_continue,
+    {
+        "continue": "executor", # Loop back to execute the next step
+        "end": END              # Finish the graph
+    }
+)
+
+# Compile the graph into a runnable application
+app = workflow.compile()
+print("\n✅ LangGraph compiled successfully!")
